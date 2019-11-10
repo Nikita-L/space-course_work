@@ -2,6 +2,7 @@ import io
 from datetime import datetime, timedelta
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
+import boto3
 
 import requests
 from requests.auth import HTTPBasicAuth
@@ -61,5 +62,18 @@ if __name__ == "__main__":
 
     resp = requests.get(files_link, auth=auth)
 
-    z = ZipFile(io.BytesIO(resp.content))  # maybe we do not need to unzip to load to bucket
-    files = {name: z.read(name) for name in z.namelist()}
+#     z = ZipFile(io.BytesIO(resp.content))  # maybe we do not need to unzip to load to bucket
+#     files = {name: z.read(name) for name in z.namelist()}
+
+    s3 = boto3.resource('s3')
+
+    try:
+        keyName = start_str + '_' + end_str
+
+        s3.meta.client.put_object(
+            Body=io.BytesIO(resp.content),
+            Bucket='output',
+            Key=keyName)
+
+    except Exception as exp:
+        print('exp: ', exp)
