@@ -72,11 +72,11 @@ if __name__ == "__main__":
     )
 
     try:
-        keyName = start_str + '_' + end_str
+        keyName = 'input/' + start_str + '_' + end_str
 
         s3.put_object(
             Body=io.BytesIO(resp.content),
-            Bucket='output',
+            Bucket='space-pipeline',
             Key=keyName)
 
     except Exception as exp:
