@@ -65,12 +65,16 @@ if __name__ == "__main__":
 #     z = ZipFile(io.BytesIO(resp.content))  # maybe we do not need to unzip to load to bucket
 #     files = {name: z.read(name) for name in z.namelist()}
 
-    s3 = boto3.resource('s3')
+    s3 = boto3.client(
+        's3',
+        aws_access_key_id = 'AKIA6IKBVUDVJLVJZSHK',
+        aws_secret_access_key = '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'
+    )
 
     try:
         keyName = start_str + '_' + end_str
 
-        s3.meta.client.put_object(
+        s3.put_object(
             Body=io.BytesIO(resp.content),
             Bucket='output',
             Key=keyName)
