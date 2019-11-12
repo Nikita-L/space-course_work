@@ -3,6 +3,10 @@ from datetime import datetime, timedelta
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 import boto3
+import rasterio
+from rasterio.session import AWSSession
+import numpy as np
+np.seterr(divide='ignore', invalid='ignore')
 
 import requests
 from requests.auth import HTTPBasicAuth
@@ -18,30 +22,31 @@ XML_NAMESPACE = "{http://www.w3.org/2005/Atom}"
 
 USERNAME = "ndranhovskyi"
 PASSWORD = "147258369a"
+AWS_ACCESS_KEY_ID = 'AKIA6IKBVUDVJLVJZSHK'
+AWS_SECRET_ACCESS_KEY = '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'
+BUCKET_FOLDER = 'space-pipeline'
+BUCKET_FOLDER_INPUT = 'input'
+BUCKET_FOLDER_OUTPUT = 'output'
 
+def upload(body, keyName):
+    try:
+        s3.put_object(
+            Body=body,
+            Bucket=BUCKET_FOLDER,
+            Key=keyName)
 
-def download_data():  # not used cause we need to unzip file in memory
-    auth = HTTPBasicAuth(USERNAME, PASSWORD)
+    except Exception as exp:
+        print('exp: ', exp)
 
-    end = datetime.now().replace(microsecond=0, second=0, minute=0, hour=0)
-    start = end - timedelta(days=7)
+def calculate_ndvi(band4, band8):
+    RED = band4.read()
+    NIR = band8.read()
 
-    start_str = start.isoformat()
-    end_str = end.isoformat()
+    a = (NIR.astype(float) - RED.astype(float))
+    b = (NIR + RED)
 
-    url = URL_TEMPLATE.format(start=start_str, end=end_str)
-
-    resp = requests.get(url, auth=auth)
-
-    xml = ET.fromstring(resp.content)
-
-    files_link = xml.find(f"{XML_NAMESPACE}entry")[1].attrib["href"]
-
-    resp = requests.get(files_link, auth=auth)
-
-    with open('./data.zip', 'wb') as f:
-        f.write(resp.content)
-
+    ndvi = np.divide(a, b, out=np.zeros_like(a), where=b!=0)
+    return ndvi
 
 if __name__ == "__main__":
     auth = HTTPBasicAuth(USERNAME, PASSWORD)
@@ -62,22 +67,31 @@ if __name__ == "__main__":
 
     resp = requests.get(files_link, auth=auth)
 
-#     z = ZipFile(io.BytesIO(resp.content))  # maybe we do not need to unzip to load to bucket
-#     files = {name: z.read(name) for name in z.namelist()}
-
-    s3 = boto3.client(
-        's3',
-        aws_access_key_id = 'AKIA6IKBVUDVJLVJZSHK',
-        aws_secret_access_key = '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'
+    session = boto3.session.Session(
+        aws_access_key_id = AWS_ACCESS_KEY_ID,
+        aws_secret_access_key = AWS_SECRET_ACCESS_KEY,
+        region_name='eu-west-1'
     )
 
-    try:
-        keyName = 'input/' + start_str + '_' + end_str + '.zip'
+    s3 = session.client('s3')
 
-        s3.put_object(
-            Body=io.BytesIO(resp.content),
-            Bucket='space-pipeline',
-            Key=keyName)
+    keyName = f"{BUCKET_FOLDER_INPUT}/{start_str}_{end_str}.zip"
+    upload(io.BytesIO(resp.content), keyName)
 
-    except Exception as exp:
-        print('exp: ', exp)
+    zip = s3.get_object(Bucket=BUCKET_FOLDER, Key=keyName)['Body'].read()
+
+    with ZipFile(io.BytesIO(zip)) as theZip:
+        fileNames = theZip.namelist()
+        for fileName in fileNames:
+            if fileName.endswith('_B04.jp2'):
+                upload(theZip.read(fileName), f"{BUCKET_FOLDER_OUTPUT}/{start_str}_{end_str}/band4.jp2")
+            if fileName.endswith('_B08.jp2'):
+                upload(theZip.read(fileName), f"{BUCKET_FOLDER_OUTPUT}/{start_str}_{end_str}/band8.jp2")
+
+    url1 = f"s3://{BUCKET_FOLDER}/{BUCKET_FOLDER_OUTPUT}/{start_str}_{end_str}/band4.jp2"
+    url2 = f"s3://{BUCKET_FOLDER}/{BUCKET_FOLDER_OUTPUT}/{start_str}_{end_str}/band8.jp2"
+
+    with rasterio.env.Env(AWSSession(session)):
+        with rasterio.open(url1) as band4, rasterio.open(url2) as band8:
+            result = calculate_ndvi(band4, band8)
+            print(result.min(), result.max())
