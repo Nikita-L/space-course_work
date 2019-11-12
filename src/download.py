@@ -72,7 +72,7 @@ if __name__ == "__main__":
     )
 
     try:
-        keyName = 'input/' + start_str + '_' + end_str
+        keyName = 'input/' + start_str + '_' + end_str + '.zip'
 
         s3.put_object(
             Body=io.BytesIO(resp.content),
